@@ -14,7 +14,9 @@ export default function CryptoBuySellDashboard(){
   const [error,setError]=useState(null);
   const [decidedAt,setDecidedAt]=useState(null);
   const [copied,setCopied]=useState(false);
+  const [pnl,setPnl]=useState({buy:null,sell:null}); // store 3h/6h/1d pnl
 
+  // Fetch main market data
   async function load(){
     try{
       setLoading(true);setError(null);
@@ -40,6 +42,30 @@ export default function CryptoBuySellDashboard(){
     const sell=[...pool].sort((a,b)=>(a.price_change_percentage_24h||0)-(b.price_change_percentage_24h||0))[0]||null;
     return{buy,sell};
   },[universe]);
+
+  // Fetch short-term market chart data for precise 3h / 6h PnL
+  async function fetchPnL(coin, side){
+    try{
+      const id = coin.id;
+      const res = await fetch(`https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=1`);
+      if(!res.ok) throw new Error('Market chart error');
+      const json = await res.json();
+      const prices = json.prices;
+      const current = prices[prices.length-1][1];
+      const threeHrsAgo = prices[Math.max(prices.length-4,0)][1];
+      const sixHrsAgo = prices[Math.max(prices.length-7,0)][1];
+      const pnl3h = ((current/threeHrsAgo)-1)*100;
+      const pnl6h = ((current/sixHrsAgo)-1)*100;
+      const pnl1d = coin.price_change_percentage_24h_in_currency;
+      setPnl(prev=>({...prev,[side]:{pnl3h,pnl6h,pnl1d}}));
+    }catch(e){console.error(e);}
+  }
+
+  // Whenever buy/sell changes, fetch their pnl
+  useEffect(()=>{
+    if(buySell.buy) fetchPnL(buySell.buy,'buy');
+    if(buySell.sell) fetchPnL(buySell.sell,'sell');
+  },[buySell.buy,buySell.sell]);
 
   function copy(text){
     navigator.clipboard?.writeText(text).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),1500); }).catch(()=>{});
@@ -99,7 +125,12 @@ page:{
         <button className="btn-dark" onClick={load} style={styles.btn}>Update</button>
       </header>
 
-      {decidedAt && <div style={styles.subtext}>Last update: {decidedAt}</div>}
+      {decidedAt && (
+  <div style={{ ...styles.subtext, width: "100%", textAlign: "left" }}>
+    Last update: {decidedAt}
+  </div>
+)}
+
       {loading && <div style={styles.subtext}>Loading...</div>}
       {error && <div style={{color:'#f87171'}}>{error}</div>}
 
@@ -109,11 +140,17 @@ page:{
             <div style={styles.sectionTitle}>BUY</div>
             {buySell.buy?(
               <>
-                <div style={{display:'flex',alignItems:'center',gap:'1rem',width:'100%'}}>
+               <div style={{display:'flex',alignItems:'flex-start',gap:'1rem',width:'100%'}}>
+
                   <img src={buySell.buy.image} alt="coin" style={{width:48,height:48,borderRadius:999,flexShrink:0}}/>
                   <div style={{minWidth:0}}>
                     <div style={styles.coinTitle}>{buySell.buy.name} <span style={{color:'#9ca3af'}}>({(buySell.buy.symbol||'').toUpperCase()})</span></div>
                     <div style={styles.coinPrice}>{fmtUSD(buySell.buy.current_price)}</div>
+                    {pnl.buy && (
+                      <p style={styles.subtext}>
+                        3h PnL {pct(pnl.buy.pnl3h)} | 6h PnL {pct(pnl.buy.pnl6h)} | 1d PnL {pct(pnl.buy.pnl1d)}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <p style={styles.subtext}>Strong 24h momentum ({pct(buySell.buy.price_change_percentage_24h)}), solid liquidity ({fmtUSD(buySell.buy.total_volume)}). Accessible across networks like {Object.keys(buySell.buy.platforms||{}).join(', ')||'multiple chains'}. Buy on Binance, Coinbase, Kraken, or KuCoin. Momentum driven by social traction and growing trading demand.</p>
@@ -125,11 +162,17 @@ page:{
             <div style={styles.sectionTitle}>SELL</div>
             {buySell.sell?(
               <>
-                <div style={{display:'flex',alignItems:'center',gap:'1rem',width:'100%'}}>
+                <div style={{display:'flex',alignItems:'flex-start',gap:'1rem',width:'100%'}}>
+
                   <img src={buySell.sell.image} alt="coin" style={{width:48,height:48,borderRadius:999,flexShrink:0}}/>
                   <div style={{minWidth:0}}>
                     <div style={styles.coinTitle}>{buySell.sell.name} <span style={{color:'#9ca3af'}}>({(buySell.sell.symbol||'').toUpperCase()})</span></div>
                     <div style={styles.coinPrice}>{fmtUSD(buySell.sell.current_price)}</div>
+                    {pnl.sell && (
+                      <p style={styles.subtext}>
+                        3h PnL {pct(pnl.sell.pnl3h)} | 6h PnL {pct(pnl.sell.pnl6h)} | 1d PnL {pct(pnl.sell.pnl1d)}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <p style={styles.subtext}>Largest 24h decline ({pct(buySell.sell.price_change_percentage_24h)}), high volume ({fmtUSD(buySell.sell.total_volume)}) suggesting profit-taking or bearish shift. Commonly sold on Binance or Bybit. Good candidate to exit or short if leveraged markets available.</p>

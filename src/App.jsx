@@ -208,20 +208,43 @@ page:{
             {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'}
           </span>
           {address && (
-            <button
-              onClick={() => copy(address)}
-              title="Copy contract"
-              style={{
-                background: 'none',
-                border: '1px solid #333',
-                borderRadius: 8,
-                padding: '2px 8px',
-                color: '#fff',
-                cursor: 'pointer'
-              }}
-            >
-              📋
-            </button>
+<button
+  onClick={() => copy(address)}
+  onMouseEnter={(e) => (e.currentTarget.style.filter = 'brightness(1.25)')}
+  onMouseLeave={(e) => (e.currentTarget.style.filter = 'none')}
+  title="Copy contract"
+  aria-label="Copy contract"
+  style={{
+    background: 'none',
+    border: '1px solid #333',
+    borderRadius: 8,
+    padding: '4px 8px',
+    color: '#fff',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'filter .15s ease'
+  }}
+>
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+</button>
+
+
+
           )}
         </div>
       ))
@@ -264,20 +287,42 @@ page:{
             {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'}
           </span>
           {address && (
-            <button
-              onClick={() => copy(address)}
-              title="Copy contract"
-              style={{
-                background: 'none',
-                border: '1px solid #333',
-                borderRadius: 8,
-                padding: '2px 8px',
-                color: '#fff',
-                cursor: 'pointer'
-              }}
-            >
-              📋
-            </button>
+     <button
+  onClick={() => copy(address)}
+  onMouseEnter={(e) => (e.currentTarget.style.filter = 'brightness(1.25)')}
+  onMouseLeave={(e) => (e.currentTarget.style.filter = 'none')}
+  title="Copy contract"
+  aria-label="Copy contract"
+  style={{
+    background: 'none',
+    border: '1px solid #333',
+    borderRadius: 8,
+    padding: '4px 8px',
+    color: '#fff',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'filter .15s ease'
+  }}
+>
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+</button>
+
+
           )}
         </div>
       ))
@@ -295,11 +340,36 @@ page:{
       )}
 
       <div style={{...styles.card,width:'100%'}}>
-        <div style={styles.sectionTitle}>❤️ Support</div>
+        <div style={styles.sectionTitle}>Support</div>
         <div style={styles.subtext}>If I helped you make money, show some love ❤️</div>
         <div style={styles.donation}>
           <input readOnly value={'0x6575048c1b1f8dB65D7B0a10430146aA59D84D58'} style={{flex:1,padding:'0.8rem',borderRadius:12,border:'1px solid #333',background:'#000',color:'#fff'}}/>
-          <button onClick={()=>copy('0x6575048c1b1f8dB65D7B0a10430146aA59D84D58')} style={styles.loveBtn} title="Copy">{copied?'✅':'📋'}</button>
+         <button
+  onClick={()=>copy('0x6575048c1b1f8dB65D7B0a10430146aA59D84D58')}
+  title="Copy wallet address"
+  aria-label="Copy wallet address"
+  style={{ ...styles.loveBtn, display:'flex', alignItems:'center', justifyContent:'center', transition:'filter .15s ease' }}
+  onMouseEnter={(e)=>e.currentTarget.style.filter='brightness(1.25)'}
+  onMouseLeave={(e)=>e.currentTarget.style.filter='none'}
+>
+  {copied ? '✅' : (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  )}
+</button>
+
         </div>
       </div>
 

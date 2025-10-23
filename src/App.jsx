@@ -15,6 +15,9 @@ export default function CryptoBuySellDashboard(){
   const [decidedAt,setDecidedAt]=useState(null);
   const [copied,setCopied]=useState(false);
   const [pnl,setPnl]=useState({buy:null,sell:null}); // store 3h/6h/1d pnl
+  // Networks + contract addresses for buy/sell
+const [coinDetails, setCoinDetails] = useState({ buy: null, sell: null });
+
 
   // Fetch main market data
   async function load(){
@@ -61,11 +64,51 @@ export default function CryptoBuySellDashboard(){
     }catch(e){console.error(e);}
   }
 
+  async function fetchCoinPlatforms(id) {
+  const res = await fetch(`https://api.coingecko.com/api/v3/coins/${id}`);
+  if (!res.ok) throw new Error('Coin details error');
+  const json = await res.json();
+  // returns { "ethereum": "0x...", "binance-smart-chain": "0x...", ... }
+  return json.platforms || {};
+}
+
+
   // Whenever buy/sell changes, fetch their pnl
   useEffect(()=>{
     if(buySell.buy) fetchPnL(buySell.buy,'buy');
     if(buySell.sell) fetchPnL(buySell.sell,'sell');
   },[buySell.buy,buySell.sell]);
+// ⬇️ New effect: Fetch networks / contract addresses for buy & sell ⬇️
+useEffect(() => {
+  let cancelled = false;
+
+  async function loadPlatforms() {
+    try {
+      const [buyPlatforms, sellPlatforms] = await Promise.all([
+        buySell.buy ? fetchCoinPlatforms(buySell.buy.id) : Promise.resolve(null),
+        buySell.sell ? fetchCoinPlatforms(buySell.sell.id) : Promise.resolve(null),
+      ]);
+
+      if (!cancelled) {
+        setCoinDetails({
+          buy: buyPlatforms,
+          sell: sellPlatforms,
+        });
+      }
+    } catch (e) {
+      console.error('Error fetching coin platform data:', e);
+      if (!cancelled) {
+        setCoinDetails({ buy: null, sell: null });
+      }
+    }
+  }
+
+  // Only run if there’s a buy/sell coin selected
+  if (buySell.buy || buySell.sell) loadPlatforms();
+
+  // Cleanup if the component unmounts
+  return () => { cancelled = true; };
+}, [buySell.buy, buySell.sell]);
 
   function copy(text){
     navigator.clipboard?.writeText(text).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),1500); }).catch(()=>{});
@@ -151,6 +194,41 @@ page:{
                         3h PnL {pct(pnl.buy.pnl3h)} | 6h PnL {pct(pnl.buy.pnl6h)} | 1d PnL {pct(pnl.buy.pnl1d)}
                       </p>
                     )}
+                    {/* Networks / contracts */}
+{coinDetails.buy && (
+  <div style={{ ...styles.subtext, marginTop: '0.25rem' }}>
+    <div style={{ fontWeight: 600, color: '#e5e7eb', marginBottom: 4 }}>Networks</div>
+    {Object.keys(coinDetails.buy).length === 0 ? (
+      <div>Native token (no contract address)</div>
+    ) : (
+      Object.entries(coinDetails.buy).map(([network, address]) => (
+        <div key={network} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+          <span style={{ minWidth: 160 }}>{network}</span>
+          <span style={{ opacity: 0.85 }}>
+            {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'}
+          </span>
+          {address && (
+            <button
+              onClick={() => copy(address)}
+              title="Copy contract"
+              style={{
+                background: 'none',
+                border: '1px solid #333',
+                borderRadius: 8,
+                padding: '2px 8px',
+                color: '#fff',
+                cursor: 'pointer'
+              }}
+            >
+              📋
+            </button>
+          )}
+        </div>
+      ))
+    )}
+  </div>
+)}
+
                   </div>
                 </div>
                 <p style={styles.subtext}>Strong 24h momentum ({pct(buySell.buy.price_change_percentage_24h)}), solid liquidity ({fmtUSD(buySell.buy.total_volume)}). Accessible across networks like {Object.keys(buySell.buy.platforms||{}).join(', ')||'multiple chains'}. Buy on Binance, Coinbase, Kraken, or KuCoin. Momentum driven by social traction and growing trading demand.</p>
@@ -173,6 +251,40 @@ page:{
                         3h PnL {pct(pnl.sell.pnl3h)} | 6h PnL {pct(pnl.sell.pnl6h)} | 1d PnL {pct(pnl.sell.pnl1d)}
                       </p>
                     )}
+                    {coinDetails.sell && (
+  <div style={{ ...styles.subtext, marginTop: '0.25rem' }}>
+    <div style={{ fontWeight: 600, color: '#e5e7eb', marginBottom: 4 }}>Networks</div>
+    {Object.keys(coinDetails.sell).length === 0 ? (
+      <div>Native token (no contract address)</div>
+    ) : (
+      Object.entries(coinDetails.sell).map(([network, address]) => (
+        <div key={network} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+          <span style={{ minWidth: 160 }}>{network}</span>
+          <span style={{ opacity: 0.85 }}>
+            {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'}
+          </span>
+          {address && (
+            <button
+              onClick={() => copy(address)}
+              title="Copy contract"
+              style={{
+                background: 'none',
+                border: '1px solid #333',
+                borderRadius: 8,
+                padding: '2px 8px',
+                color: '#fff',
+                cursor: 'pointer'
+              }}
+            >
+              📋
+            </button>
+          )}
+        </div>
+      ))
+    )}
+  </div>
+)}
+
                   </div>
                 </div>
                 <p style={styles.subtext}>Largest 24h decline ({pct(buySell.sell.price_change_percentage_24h)}), high volume ({fmtUSD(buySell.sell.total_volume)}) suggesting profit-taking or bearish shift. Commonly sold on Binance or Bybit. Good candidate to exit or short if leveraged markets available.</p>

@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 /**
- * NOT A FINANCIAL ADVISOR — Dark, minimal, LayerZero-green title only
- * - Top: Full-width "How the battle works" card
- * - Two-column: LEFT (Battle stack) | RIGHT (Winner card)
- * - Below: SELL card + Donation
- * - Button: "Refresh"
- * - Font: Google "Doto" ONLY for the title
- * - No green anywhere else
+ * NOT A FINANCIAL ADVISOR — Dark, minimal
+ * - Title uses Doto (green #00FFB2)
+ * - Two-column (desktop): LEFT Battle | RIGHT Winner (equal heights)
+ * - SELL below
+ * - "How the battle works" moved to bottom (above Donation)
+ * - Button: Refresh
  */
 
 const API =
@@ -61,13 +60,9 @@ export default function CryptoBuySellDashboard(){
 
     const U = universe.map(withPct);
 
-    // EARLY: modest 24h rise (3–10%), shows 1h acceleration
     const earlyPool = U.filter(c => c.p24h >= 3 && c.p24h <= 10);
-
-    // EXPLOSIVE: strong 24h rise (10–60%), decent liquidity
     const explosivePool = U.filter(c => c.p24h > 10 && c.p24h <= 60 && c.total_volume > 20_000_000);
 
-    // Score emphasizes now-momentum + trend + liquidity
     const score = (c) => (safe(c.p1h)*3) + safe(c.p24h) + Math.log10(Math.max(1, safe(c.total_volume)));
 
     const early = earlyPool.sort((a,b)=>score(b)-score(a))[0] || null;
@@ -186,15 +181,16 @@ export default function CryptoBuySellDashboard(){
     subtext:{fontSize:14,color:'#9ca3af',lineHeight:1.65},
 
     // Layout
-    twoCol:{display:'grid',gap:'2rem',width:'100%'},
+    twoCol:{display:'grid',gap:'2rem',width:'100%', alignItems:'stretch'},
+
+    // Column wrappers to force equal height
+    leftCol:{display:'flex'},
+    rightCol:{display:'flex'},
 
     // Cards
     sectionTitle:{fontSize:14,letterSpacing:'0.12em',textTransform:'uppercase',color:'#9da3ae'},
-    card:{background:'#0c0c0c',border:'1px solid #171717',borderRadius:18,padding:'2rem',boxShadow:'0 0 0 1px rgba(255,255,255,0.02) inset',display:'flex',flexDirection:'column',gap:'1.25rem'},
+    card:{background:'#0c0c0c',border:'1px solid #171717',borderRadius:18,padding:'2rem',boxShadow:'0 0 0 1px rgba(255,255,255,0.02) inset',display:'flex',flexDirection:'column',gap:'1.25rem', flex:1},
     subcard:{background:'#0c0c0c',border:'1px solid #141414',borderRadius:14,padding:'1.25rem',display:'flex',flexDirection:'column',gap:'0.75rem'},
-
-    explainerTitle:{fontSize:13,letterSpacing:'0.18em',textTransform:'uppercase',color:'#9da3ae'},
-    explainerBox:{background:'#0c0c0c',border:'1px solid #141414',borderRadius:14,padding:'1rem',color:'#c7d0da'},
 
     coinRow:{display:'flex',alignItems:'flex-start',gap:'1rem',width:'100%'},
     coinTitle:{fontWeight:700,fontSize:18},
@@ -206,6 +202,9 @@ export default function CryptoBuySellDashboard(){
     scoreValue:{fontWeight:900,fontSize:28,letterSpacing:'-0.02em',color:'#ffffff'},
 
     verdict:{background:'#0e0e0e',border:'1px dashed #222',borderRadius:14,padding:'1rem',color:'#c7d0da'},
+
+    explainerTitle:{fontSize:13,letterSpacing:'0.18em',textTransform:'uppercase',color:'#9da3ae'},
+    explainerBox:{background:'#0c0c0c',border:'1px solid #141414',borderRadius:14,padding:'1rem',color:'#c7d0da'},
 
     donation:{display:'flex',alignItems:'center',gap:10,marginTop:'0.5rem',width:'100%'},
     copyBtnBase:{background:'none',border:'1px solid #333',borderRadius:8,padding:'4px 8px',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'filter .15s ease'},
@@ -245,27 +244,13 @@ export default function CryptoBuySellDashboard(){
           </button>
         </header>
 
-        {/* FULL-WIDTH: Explainer */}
-        <div style={styles.card}>
-          <div style={styles.sectionTitle}>How the battle works</div>
-          <div style={styles.explainerBox}>
-            We compare two contenders on momentum and liquidity to aim for pragmatic entries:
-            <br/><br/>
-            <strong>Early</strong> — coins up <em>3–10%</em> in 24h with a positive <em>1h impulse</em> (healthier entries).
-            <br/>
-            <strong>Explosive</strong> — coins up <em>10–60%</em> in 24h with strong <em>liquidity</em> (bigger upside, bigger risk).
-            <br/><br/>
-            <span style={{opacity:.9}}>Score formula:</span> <code>(1h momentum × 3) + 24h change + log₁₀(volume)</code>. Highest score wins.
-          </div>
-        </div>
-
         {loading && <div style={styles.subtext}>Loading...</div>}
         {error && <div style={{color:'#f87171'}}>{error}</div>}
 
-        {/* ===== Two-column: LEFT (Battle stack) | RIGHT (Winner) ===== */}
+        {/* ===== Two-column: LEFT (Battle) | RIGHT (Winner) — equal heights ===== */}
         <div className="two-col" style={styles.twoCol}>
-          {/* LEFT: Battle */}
-          <div>
+          {/* LEFT: Battle (wrapper ensures equal height) */}
+          <div style={styles.leftCol}>
             <div style={styles.card}>
               <div style={styles.sectionTitle}>Battle of Momentum</div>
 
@@ -337,8 +322,8 @@ export default function CryptoBuySellDashboard(){
             </div>
           </div>
 
-          {/* RIGHT: Winner */}
-          <div>
+          {/* RIGHT: Winner (wrapper ensures equal height) */}
+          <div style={styles.rightCol}>
             <div style={styles.card}>
               <div style={styles.sectionTitle}>Winner</div>
               {battle.winner ? (
@@ -473,7 +458,21 @@ export default function CryptoBuySellDashboard(){
           ):<div style={styles.subtext}>No SELL candidate found.</div>}
         </div>
 
-        {/* Donation (full width) */}
+        {/* How the battle works (moved to bottom) */}
+        <div style={styles.card}>
+          <div style={styles.sectionTitle}>How the battle works</div>
+          <div style={styles.explainerBox}>
+            We compare two contenders on momentum and liquidity to aim for pragmatic entries:
+            <br/><br/>
+            <strong>Early</strong> — coins up <em>3–10%</em> in 24h with a positive <em>1h impulse</em> (healthier entries).
+            <br/>
+            <strong>Explosive</strong> — coins up <em>10–60%</em> in 24h with strong <em>liquidity</em> (bigger upside, bigger risk).
+            <br/><br/>
+            <span style={{opacity:.9}}>Score formula:</span> <code>(1h momentum × 3) + 24h change + log₁₀(volume)</code>. Highest score wins.
+          </div>
+        </div>
+
+        {/* Donation */}
         <div style={{...styles.card,width:'100%'}}>
           <div style={styles.sectionTitle}>❤️ Support</div>
           <div style={styles.subtext}>If I helped you make money, show some love ❤️</div>

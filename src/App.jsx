@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 /**
- * NOT A FINANCIAL ADVISOR — Dark, minimal, LayerZero-green accent
- * - Sixtyfour Convergence font for logo (Google Fonts)
- * - LEFT: Battle stack (Explainer + Early + Explosive) with visible SCORE
- * - RIGHT: Winner card (single)
- * - BELOW: SELL + Donation
+ * NOT A FINANCIAL ADVISOR — Dark, minimal, LayerZero-green title only
+ * - Top: Full-width "How the battle works" card
+ * - Two-column: LEFT (Battle stack) | RIGHT (Winner card)
+ * - Below: SELL card + Donation
+ * - Button: "Refresh"
+ * - Font: Google "Doto" ONLY for the title
+ * - No green anywhere else
  */
 
 const API =
@@ -19,7 +21,6 @@ export default function CryptoBuySellDashboard(){
   const [data,setData]=useState([]);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState(null);
-  const [decidedAt,setDecidedAt]=useState(null);
   const [copied,setCopied]=useState(false);
 
   const [pnl,setPnl]=useState({winner:null,sell:null});
@@ -36,7 +37,6 @@ export default function CryptoBuySellDashboard(){
       if(!res.ok)throw new Error('CoinGecko error '+res.status);
       const json=await res.json();
       setData(Array.isArray(json)?json:[]);
-      setDecidedAt(new Date().toLocaleString());
     }catch(e){setError(String(e));}finally{setLoading(false);}
   }
   useEffect(()=>{load()},[]);
@@ -61,9 +61,13 @@ export default function CryptoBuySellDashboard(){
 
     const U = universe.map(withPct);
 
+    // EARLY: modest 24h rise (3–10%), shows 1h acceleration
     const earlyPool = U.filter(c => c.p24h >= 3 && c.p24h <= 10);
+
+    // EXPLOSIVE: strong 24h rise (10–60%), decent liquidity
     const explosivePool = U.filter(c => c.p24h > 10 && c.p24h <= 60 && c.total_volume > 20_000_000);
 
+    // Score emphasizes now-momentum + trend + liquidity
     const score = (c) => (safe(c.p1h)*3) + safe(c.p24h) + Math.log10(Math.max(1, safe(c.total_volume)));
 
     const early = earlyPool.sort((a,b)=>score(b)-score(a))[0] || null;
@@ -166,12 +170,11 @@ export default function CryptoBuySellDashboard(){
       padding:'4.5rem 1.25rem',
       overflowX:'hidden'
     },
-    container:{ width:'100%', maxWidth:1200, display:'flex', flexDirection:'column', gap:'2.75rem' },
+    container:{ width:'100%', maxWidth:1200, display:'flex', flexDirection:'column', gap:'2.25rem' },
 
     header:{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%'},
     logo:{
-      // Sixtyfour Convergence applied via class below
-      fontFamily:'"Sixtyfour Convergence", Inter, system-ui, Arial, sans-serif',
+      fontFamily:'"Doto", Inter, system-ui, Arial, sans-serif',
       fontSize:28,
       fontWeight:900,
       letterSpacing:'0.08em',
@@ -182,8 +185,10 @@ export default function CryptoBuySellDashboard(){
     btn:{background:'#0a0a0a',color:'#fff',border:'1px solid #2a2a2a',borderRadius:999,padding:'0.9rem 1.4rem',cursor:'pointer',fontWeight:700,letterSpacing:'.2px',transition:'all .2s ease'},
     subtext:{fontSize:14,color:'#9ca3af',lineHeight:1.65},
 
+    // Layout
     twoCol:{display:'grid',gap:'2rem',width:'100%'},
 
+    // Cards
     sectionTitle:{fontSize:14,letterSpacing:'0.12em',textTransform:'uppercase',color:'#9da3ae'},
     card:{background:'#0c0c0c',border:'1px solid #171717',borderRadius:18,padding:'2rem',boxShadow:'0 0 0 1px rgba(255,255,255,0.02) inset',display:'flex',flexDirection:'column',gap:'1.25rem'},
     subcard:{background:'#0c0c0c',border:'1px solid #141414',borderRadius:14,padding:'1.25rem',display:'flex',flexDirection:'column',gap:'0.75rem'},
@@ -198,7 +203,7 @@ export default function CryptoBuySellDashboard(){
     tag:{border:'1px solid #2a2a2a',borderRadius:999,padding:'0.25rem 0.7rem',fontSize:12,color:'#cbd5e1'},
     scoreWrap:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4},
     scoreLabel:{fontSize:11,letterSpacing:'0.14em',textTransform:'uppercase',color:'#9da3ae'},
-    scoreValue:{fontWeight:900,fontSize:30,letterSpacing:'-0.02em',color:'#00FFB2'},
+    scoreValue:{fontWeight:900,fontSize:28,letterSpacing:'-0.02em',color:'#ffffff'},
 
     verdict:{background:'#0e0e0e',border:'1px dashed #222',borderRadius:14,padding:'1rem',color:'#c7d0da'},
 
@@ -209,14 +214,14 @@ export default function CryptoBuySellDashboard(){
   return(
     <div style={styles.page}>
       <style>{`
-        /* Import Google Font */
-        @import url('https://fonts.googleapis.com/css2?family=Sixtyfour+Convergence&display=swap');
+        /* Import Google Font (Doto) */
+        @import url('https://fonts.googleapis.com/css2?family=Doto:wght@900&display=swap');
 
-        :root { --accent: #00FFB2; }
         *{box-sizing:border-box}
         html,body,#root{height:100%;margin:0;background:#0a0a0a;color:#eef2f5}
         button:focus{outline:2px solid #3b82f6;outline-offset:2px}
         .btn-dark:hover{background:#fff!important;color:#000!important}
+
         /* Two-column at desktop; stacked on mobile */
         .two-col { grid-template-columns: 1fr; }
         @media (min-width: 901px){
@@ -236,43 +241,35 @@ export default function CryptoBuySellDashboard(){
             onMouseEnter={(e)=>{e.currentTarget.style.background='#fff';e.currentTarget.style.color='#000'}}
             onMouseLeave={(e)=>{e.currentTarget.style.background='#0a0a0a';e.currentTarget.style.color='#fff'}}
           >
-            Update
+            Refresh
           </button>
         </header>
 
-        {/* Last update */}
-        {decidedAt && (
-          <div style={{ ...styles.subtext, width: "100%", textAlign: "left" }}>
-            Last update: {decidedAt}
+        {/* FULL-WIDTH: Explainer */}
+        <div style={styles.card}>
+          <div style={styles.sectionTitle}>How the battle works</div>
+          <div style={styles.explainerBox}>
+            We compare two contenders on momentum and liquidity to aim for pragmatic entries:
+            <br/><br/>
+            <strong>Early</strong> — coins up <em>3–10%</em> in 24h with a positive <em>1h impulse</em> (healthier entries).
+            <br/>
+            <strong>Explosive</strong> — coins up <em>10–60%</em> in 24h with strong <em>liquidity</em> (bigger upside, bigger risk).
+            <br/><br/>
+            <span style={{opacity:.9}}>Score formula:</span> <code>(1h momentum × 3) + 24h change + log₁₀(volume)</code>. Highest score wins.
           </div>
-        )}
+        </div>
+
         {loading && <div style={styles.subtext}>Loading...</div>}
         {error && <div style={{color:'#f87171'}}>{error}</div>}
 
         {/* ===== Two-column: LEFT (Battle stack) | RIGHT (Winner) ===== */}
         <div className="two-col" style={styles.twoCol}>
-          {/* LEFT: Battle Stack */}
+          {/* LEFT: Battle */}
           <div>
-            {/* Explainer (independent box) */}
             <div style={styles.card}>
               <div style={styles.sectionTitle}>Battle of Momentum</div>
-              <div style={styles.explainerBox}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                  <div style={styles.explainerTitle}>How the battle works</div>
-                </div>
-                <div style={{color:'#cbd5e1',fontSize:14,lineHeight:1.65}}>
-                  We compare two contenders:
-                  <br/>
-                  <strong style={{color:'var(--accent)'}}>Early</strong> — coins up <em>3–10%</em> in 24h with a positive <em>1h impulse</em> (healthier entries).
-                  <br/>
-                  <strong style={{color:'var(--accent)'}}>Explosive</strong> — coins up <em>10–60%</em> in 24h with strong <em>liquidity</em> (bigger upside, bigger risk).
-                  <br/><br/>
-                  <span style={{opacity:.9}}>Scoring formula:</span> <code>Score = (1h momentum × 3) + 24h change + log₁₀(volume)</code>.
-                  The higher score wins.
-                </div>
-              </div>
 
-              {/* EARLY contender */}
+              {/* EARLY */}
               <div style={styles.subcard}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
                   <span style={styles.tag}>EARLY</span>
@@ -281,9 +278,9 @@ export default function CryptoBuySellDashboard(){
                     <div style={styles.scoreValue}>
                       {battle.early
                         ? (
-                          (safe(battle.early.price_change_percentage_1h_in_currency||battle.early.price_change_percentage_1h||0)*3) +
-                          (safe(battle.early.price_change_percentage_24h_in_currency||battle.early.price_change_percentage_24h||0)) +
-                          Math.log10(Math.max(1, safe(battle.early.total_volume)))
+                          (safe(battle.early?.price_change_percentage_1h_in_currency ?? battle.early?.price_change_percentage_1h ?? 0)*3) +
+                          (safe(battle.early?.price_change_percentage_24h_in_currency ?? battle.early?.price_change_percentage_24h ?? 0)) +
+                          Math.log10(Math.max(1, safe(battle.early?.total_volume)))
                         ).toFixed(1)
                         : "—"}
                     </div>
@@ -305,7 +302,7 @@ export default function CryptoBuySellDashboard(){
                 ) : <div style={styles.subtext}>No early candidate today.</div>}
               </div>
 
-              {/* EXPLOSIVE contender */}
+              {/* EXPLOSIVE */}
               <div style={styles.subcard}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
                   <span style={styles.tag}>EXPLOSIVE</span>
@@ -314,9 +311,9 @@ export default function CryptoBuySellDashboard(){
                     <div style={styles.scoreValue}>
                       {battle.explosive
                         ? (
-                          (safe(battle.explosive.price_change_percentage_1h_in_currency||battle.explosive.price_change_percentage_1h||0)*3) +
-                          (safe(battle.explosive.price_change_percentage_24h_in_currency||battle.explosive.price_change_percentage_24h||0)) +
-                          Math.log10(Math.max(1, safe(battle.explosive.total_volume)))
+                          (safe(battle.explosive?.price_change_percentage_1h_in_currency ?? battle.explosive?.price_change_percentage_1h ?? 0)*3) +
+                          (safe(battle.explosive?.price_change_percentage_24h_in_currency ?? battle.explosive?.price_change_percentage_24h ?? 0)) +
+                          Math.log10(Math.max(1, safe(battle.explosive?.total_volume)))
                         ).toFixed(1)
                         : "—"}
                     </div>
@@ -340,13 +337,14 @@ export default function CryptoBuySellDashboard(){
             </div>
           </div>
 
-          {/* RIGHT: Winner Card */}
+          {/* RIGHT: Winner */}
           <div>
             <div style={styles.card}>
               <div style={styles.sectionTitle}>Winner</div>
               {battle.winner ? (
                 <>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                  {/* Header row: left (coin+price) | right (tag+score) */}
+                  <div style={{display:'flex',justifyContent:'space-between',gap:'1rem',alignItems:'flex-start'}}>
                     <div style={{display:'flex',gap:'1rem'}}>
                       <img src={battle.winner.image} alt="coin" style={{width:56,height:56,borderRadius:999,flexShrink:0}}/>
                       <div>
@@ -354,13 +352,14 @@ export default function CryptoBuySellDashboard(){
                           {battle.winner.name} <span style={{color:'#9ca3af'}}>({(battle.winner.symbol||'').toUpperCase()})</span>
                         </div>
                         <div style={styles.coinPrice}>{fmtUSD(battle.winner.current_price)}</div>
-                        <div style={{display:'flex',gap:12,marginTop:10,alignItems:'center'}}>
-                          <span style={{...styles.tag, borderColor:'#1f1f1f', color:'#cbd5e1'}}>{battle.winner._tag}</span>
-                          <div style={styles.scoreWrap}>
-                            <div style={styles.scoreLabel}>Score</div>
-                            <div style={styles.scoreValue}>{battle.winner._score?.toFixed(1)}</div>
-                          </div>
-                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+                      <span style={{...styles.tag, borderColor:'#1f1f1f', color:'#cbd5e1'}}>{battle.winner._tag}</span>
+                      <div style={styles.scoreWrap}>
+                        <div style={styles.scoreLabel}>Score</div>
+                        <div style={styles.scoreValue}>{battle.winner._score?.toFixed(1)}</div>
                       </div>
                     </div>
                   </div>

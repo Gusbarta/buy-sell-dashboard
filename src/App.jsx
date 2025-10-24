@@ -1,25 +1,34 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-// Ultimate BUY/SELL Not Adviser — Centered, full-screen, responsive Web3 dark UI
+/**
+ * NOT A FINANCIAL ADVISOR — Dark, minimal
+ * - Title uses Doto (green #00FFB2)
+ * - Two-column (desktop): LEFT Battle | RIGHT Winner (equal heights)
+ * - SELL below
+ * - "How the battle works" moved to bottom (above Donation)
+ * - Button: Refresh
+ */
 
 const API =
   "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&price_change_percentage=1h,24h,7d";
 
 function fmtUSD(n){ if(!n&&n!==0)return"-"; return n<1?"$"+Number(n).toLocaleString(undefined,{minimumFractionDigits:4,maximumFractionDigits:6}):"$"+Number(n).toLocaleString(undefined,{maximumFractionDigits:2}); }
 function pct(n){ if(!n&&n!==0)return"-"; const s=n>0?"+":""; return s+Number(n).toFixed(2)+"%"; }
+function safe(n){ return (n===null||n===undefined)?0:Number(n); }
 
 export default function CryptoBuySellDashboard(){
   const [data,setData]=useState([]);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState(null);
-  const [decidedAt,setDecidedAt]=useState(null);
   const [copied,setCopied]=useState(false);
-  const [pnl,setPnl]=useState({buy:null,sell:null}); // store 3h/6h/1d pnl
-  // Networks + contract addresses for buy/sell
-const [coinDetails, setCoinDetails] = useState({ buy: null, sell: null });
 
+  const [pnl,setPnl]=useState({winner:null,sell:null});
+  const [coinDetails, setCoinDetails] = useState({ winner: null, sell: null });
 
-  // Fetch main market data
+  const [battle,setBattle]=useState({
+    early:null, explosive:null, winner:null, reason:""
+  });
+
   async function load(){
     try{
       setLoading(true);setError(null);
@@ -27,26 +36,70 @@ const [coinDetails, setCoinDetails] = useState({ buy: null, sell: null });
       if(!res.ok)throw new Error('CoinGecko error '+res.status);
       const json=await res.json();
       setData(Array.isArray(json)?json:[]);
-      setDecidedAt(new Date().toLocaleString());
     }catch(e){setError(String(e));}finally{setLoading(false);}
   }
   useEffect(()=>{load()},[]);
 
   const universe=useMemo(()=>{
     const stables=new Set(['usdt','usdc','busd','dai','tusd','usdp','frax']);
-    return data.filter(c=>c.total_volume>10_000_000&&!stables.has((c.symbol||'').toLowerCase()));
+    return data.filter(c=>
+      c.total_volume>10_000_000 &&
+      !stables.has((c.symbol||'').toLowerCase())
+    );
   },[data]);
 
-  const buySell=useMemo(()=>{
-    if(!universe.length)return{buy:null,sell:null};
-    const fresh=universe.filter(c=>(c.market_cap_rank&&c.market_cap_rank>200)||(c.market_cap<50_000_000&&Math.abs(c.price_change_percentage_24h||0)>20));
-    const pool=universe.concat(fresh);
-    const buy=[...pool].sort((a,b)=>(b.price_change_percentage_24h||0)-(a.price_change_percentage_24h||0))[0]||null;
-    const sell=[...pool].sort((a,b)=>(a.price_change_percentage_24h||0)-(b.price_change_percentage_24h||0))[0]||null;
-    return{buy,sell};
+  // Build Battle: Early vs Explosive + winner
+  useEffect(()=>{
+    if(!universe.length){ setBattle({early:null,explosive:null,winner:null,reason:""}); return; }
+
+    const withPct=(c)=>({
+      ...c,
+      p1h: c.price_change_percentage_1h_in_currency ?? c.price_change_percentage_1h ?? 0,
+      p24h: c.price_change_percentage_24h_in_currency ?? c.price_change_percentage_24h ?? 0,
+    });
+
+    const U = universe.map(withPct);
+
+    const earlyPool = U.filter(c => c.p24h >= 3 && c.p24h <= 10);
+    const explosivePool = U.filter(c => c.p24h > 10 && c.p24h <= 60 && c.total_volume > 20_000_000);
+
+    const score = (c) => (safe(c.p1h)*3) + safe(c.p24h) + Math.log10(Math.max(1, safe(c.total_volume)));
+
+    const early = earlyPool.sort((a,b)=>score(b)-score(a))[0] || null;
+    const explosive = explosivePool.sort((a,b)=>score(b)-score(a))[0] || null;
+
+    let winner = null;
+    let reason = "";
+    if (early && explosive){
+      const se = score(early), sx = score(explosive);
+      if (sx >= se){
+        winner = {...explosive, _score:sx, _tag:"Explosive"};
+        reason = "Explosive wins: stronger 1h momentum + higher liquidity suggest continuation (but watch retrace risk).";
+      } else {
+        winner = {...early, _score:se, _tag:"Early"};
+        reason = "Early wins: controlled 24h rise with positive 1h impulse; better risk/reward for a +10% target.";
+      }
+    } else if (explosive){
+      const sx = score(explosive);
+      winner = {...explosive, _score: sx, _tag:"Explosive"};
+      reason = "Explosive wins by default: early candidate not strong enough today.";
+    } else if (early){
+      const se = score(early);
+      winner = {...early, _score: se, _tag:"Early"};
+      reason = "Early wins by default: no credible explosive runner in range.";
+    }
+
+    setBattle({early, explosive, winner, reason});
   },[universe]);
 
-  // Fetch short-term market chart data for precise 3h / 6h PnL
+  // SELL = worst 24h from universe
+  const sellPick=useMemo(()=>{
+    if(!universe.length) return null;
+    const get24 = (c)=> c.price_change_percentage_24h_in_currency ?? c.price_change_percentage_24h ?? 0;
+    return [...universe].sort((a,b)=>get24(a)-get24(b))[0] || null;
+  },[universe]);
+
+  // PnL calc for winner/sell
   async function fetchPnL(coin, side){
     try{
       const id = coin.id;
@@ -59,321 +112,394 @@ const [coinDetails, setCoinDetails] = useState({ buy: null, sell: null });
       const sixHrsAgo = prices[Math.max(prices.length-7,0)][1];
       const pnl3h = ((current/threeHrsAgo)-1)*100;
       const pnl6h = ((current/sixHrsAgo)-1)*100;
-      const pnl1d = coin.price_change_percentage_24h_in_currency;
-      setPnl(prev=>({...prev,[side]:{pnl3h,pnl6h,pnl1d}}));
+      const p24 = coin.price_change_percentage_24h_in_currency ?? coin.price_change_percentage_24h ?? 0;
+      setPnl(prev=>({...prev,[side]:{pnl3h,pnl6h,pnl1d:p24}}));
     }catch(e){console.error(e);}
   }
 
   async function fetchCoinPlatforms(id) {
-  const res = await fetch(`https://api.coingecko.com/api/v3/coins/${id}`);
-  if (!res.ok) throw new Error('Coin details error');
-  const json = await res.json();
-  // returns { "ethereum": "0x...", "binance-smart-chain": "0x...", ... }
-  return json.platforms || {};
-}
-
-
-  // Whenever buy/sell changes, fetch their pnl
-  useEffect(()=>{
-    if(buySell.buy) fetchPnL(buySell.buy,'buy');
-    if(buySell.sell) fetchPnL(buySell.sell,'sell');
-  },[buySell.buy,buySell.sell]);
-// ⬇️ New effect: Fetch networks / contract addresses for buy & sell ⬇️
-useEffect(() => {
-  let cancelled = false;
-
-  async function loadPlatforms() {
-    try {
-      const [buyPlatforms, sellPlatforms] = await Promise.all([
-        buySell.buy ? fetchCoinPlatforms(buySell.buy.id) : Promise.resolve(null),
-        buySell.sell ? fetchCoinPlatforms(buySell.sell.id) : Promise.resolve(null),
-      ]);
-
-      if (!cancelled) {
-        setCoinDetails({
-          buy: buyPlatforms,
-          sell: sellPlatforms,
-        });
-      }
-    } catch (e) {
-      console.error('Error fetching coin platform data:', e);
-      if (!cancelled) {
-        setCoinDetails({ buy: null, sell: null });
-      }
-    }
+    const res = await fetch(`https://api.coingecko.com/api/v3/coins/${id}`);
+    if (!res.ok) throw new Error('Coin details error');
+    const json = await res.json();
+    return json.platforms || {};
   }
 
-  // Only run if there’s a buy/sell coin selected
-  if (buySell.buy || buySell.sell) loadPlatforms();
+  useEffect(()=>{
+    if(battle.winner) fetchPnL(battle.winner,'winner');
+    if(sellPick)      fetchPnL(sellPick,'sell');
+  },[battle.winner, sellPick]);
 
-  // Cleanup if the component unmounts
-  return () => { cancelled = true; };
-}, [buySell.buy, buySell.sell]);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPlatforms() {
+      try {
+        const [wPlatforms, sPlatforms] = await Promise.all([
+          battle.winner ? fetchCoinPlatforms(battle.winner.id) : Promise.resolve(null),
+          sellPick ? fetchCoinPlatforms(sellPick.id) : Promise.resolve(null),
+        ]);
+        if (!cancelled) setCoinDetails({ winner: wPlatforms, sell: sPlatforms });
+      } catch (e) {
+        console.error('Error fetching coin platform data:', e);
+        if (!cancelled) setCoinDetails({ winner: null, sell: null });
+      }
+    }
+    if (battle.winner || sellPick) loadPlatforms();
+    return () => { cancelled = true; };
+  }, [battle.winner, sellPick]);
 
   function copy(text){
     navigator.clipboard?.writeText(text).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),1500); }).catch(()=>{});
   }
 
+  // ===== Styles =====
   const styles={
-page:{
-  fontFamily:'Inter,system-ui',
-  background:'#0a0a0a',
-  color:'#f9fafb',
-  minHeight:'100vh',
-  width:'100vw',
-  display:'flex',
-  justifyContent:'center',
-  alignItems:'flex-start',
-  padding:'4rem 1rem',
-  overflowX:'hidden'
-},
-
-    container:{
-      width:'100%',
-      maxWidth:1200,
+    page:{
+      fontFamily:'Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial',
+      background:'#0a0a0a',
+      color:'#eef2f5',
+      minHeight:'100vh',
+      width:'100vw',
       display:'flex',
-      flexDirection:'column',
-      alignItems:'center',
-      gap:'2.5rem',
+      justifyContent:'center',
+      alignItems:'flex-start',
+      padding:'4.5rem 1.25rem',
+      overflowX:'hidden'
     },
-    card:{background:'#111',border:'1px solid #222',borderRadius:16,padding:'2rem',boxShadow:'0 0 25px rgba(255,255,255,0.03)',display:'flex',flexDirection:'column',gap:'1.25rem',alignItems:'flex-start',width:'100%'},
+    container:{ width:'100%', maxWidth:1200, display:'flex', flexDirection:'column', gap:'2.25rem' },
+
     header:{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%'},
-    btn:{background:'#1f1f1f',color:'#fff',border:'1px solid #333',borderRadius:14,padding:'0.8rem 1.2rem',cursor:'pointer',fontWeight:700,letterSpacing:'.2px',transition:'all .2s ease',whiteSpace:'nowrap'},
-    title:{fontSize:30,fontWeight:800,letterSpacing:'-0.02em',textAlign:'left'},
-    sectionTitle:{fontSize:18,fontWeight:700,marginBottom:'0.25rem',textAlign:'left'},
-    subtext:{fontSize:14,color:'#9ca3af',textAlign:'left',lineHeight:1.65},
-    coinTitle:{fontWeight:700,fontSize:18,textAlign:'left'},
-    coinPrice:{fontSize:24,fontWeight:800,textAlign:'left'},
+    logo:{
+      fontFamily:'"Doto", Inter, system-ui, Arial, sans-serif',
+      fontSize:28,
+      fontWeight:900,
+      letterSpacing:'0.08em',
+      textTransform:'uppercase',
+      color:'#00FFB2'
+    },
+
+    btn:{background:'#0a0a0a',color:'#fff',border:'1px solid #2a2a2a',borderRadius:999,padding:'0.9rem 1.4rem',cursor:'pointer',fontWeight:700,letterSpacing:'.2px',transition:'all .2s ease'},
+    subtext:{fontSize:14,color:'#9ca3af',lineHeight:1.65},
+
+    // Layout
+    twoCol:{display:'grid',gap:'2rem',width:'100%', alignItems:'stretch'},
+
+    // Column wrappers to force equal height
+    leftCol:{display:'flex'},
+    rightCol:{display:'flex'},
+
+    // Cards
+    sectionTitle:{fontSize:14,letterSpacing:'0.12em',textTransform:'uppercase',color:'#9da3ae'},
+    card:{background:'#0c0c0c',border:'1px solid #171717',borderRadius:18,padding:'2rem',boxShadow:'0 0 0 1px rgba(255,255,255,0.02) inset',display:'flex',flexDirection:'column',gap:'1.25rem', flex:1},
+    subcard:{background:'#0c0c0c',border:'1px solid #141414',borderRadius:14,padding:'1.25rem',display:'flex',flexDirection:'column',gap:'0.75rem'},
+
+    coinRow:{display:'flex',alignItems:'flex-start',gap:'1rem',width:'100%'},
+    coinTitle:{fontWeight:700,fontSize:18},
+    coinPrice:{fontSize:26,fontWeight:800},
+
+    tag:{border:'1px solid #2a2a2a',borderRadius:999,padding:'0.25rem 0.7rem',fontSize:12,color:'#cbd5e1'},
+    scoreWrap:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4},
+    scoreLabel:{fontSize:11,letterSpacing:'0.14em',textTransform:'uppercase',color:'#9da3ae'},
+    scoreValue:{fontWeight:900,fontSize:28,letterSpacing:'-0.02em',color:'#ffffff'},
+
+    verdict:{background:'#0e0e0e',border:'1px dashed #222',borderRadius:14,padding:'1rem',color:'#c7d0da'},
+
+    explainerTitle:{fontSize:13,letterSpacing:'0.18em',textTransform:'uppercase',color:'#9da3ae'},
+    explainerBox:{background:'#0c0c0c',border:'1px solid #141414',borderRadius:14,padding:'1rem',color:'#c7d0da'},
+
     donation:{display:'flex',alignItems:'center',gap:10,marginTop:'0.5rem',width:'100%'},
-    loveBtn:{background:'none',color:'#fff',padding:'0.6rem',border:'1px solid #333',borderRadius:10,cursor:'pointer',transition:'transform .1s ease'},
+    copyBtnBase:{background:'none',border:'1px solid #333',borderRadius:8,padding:'4px 8px',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'filter .15s ease'},
   };
 
   return(
-  <div style={styles.page}>
-    <style>{`
-      *{box-sizing:border-box}
-      html,body,#root{height:100%;margin:0;background:#0a0a0a;color:#f9fafb}
-      .grid{display:grid;gap:2rem;width:100%}
-      @media (max-width: 900px){.grid{grid-template-columns:1fr}}
-      @media (min-width:901px){.grid{grid-template-columns:1fr 1fr}}
-      button:focus{outline:2px solid #3b82f6;outline-offset:2px}
-      .btn-dark:hover{background:#fff!important;color:#000!important}
-    `}</style>
+    <div style={styles.page}>
+      <style>{`
+        /* Import Google Font (Doto) */
+        @import url('https://fonts.googleapis.com/css2?family=Doto:wght@900&display=swap');
 
-    <div style={styles.container}>
-      <header style={styles.header}>
-        <div style={{minWidth:0}}>
-          <div style={styles.title}>Ultimate BUY/SELL Not Adviser</div>
-        </div>
-        <button className="btn-dark" onClick={load} style={styles.btn}>Update</button>
-      </header>
+        *{box-sizing:border-box}
+        html,body,#root{height:100%;margin:0;background:#0a0a0a;color:#eef2f5}
+        button:focus{outline:2px solid #3b82f6;outline-offset:2px}
+        .btn-dark:hover{background:#fff!important;color:#000!important}
 
-      {decidedAt && (
-  <div style={{ ...styles.subtext, width: "100%", textAlign: "left" }}>
-    Last update: {decidedAt}
-  </div>
-)}
+        /* Two-column at desktop; stacked on mobile */
+        .two-col { grid-template-columns: 1fr; }
+        @media (min-width: 901px){
+          .two-col { grid-template-columns: 1.2fr 0.8fr; }
+        }
+        code { background:#0f0f0f; border:1px solid #161616; padding:2px 6px; border-radius:6px; }
+      `}</style>
 
-      {loading && <div style={styles.subtext}>Loading...</div>}
-      {error && <div style={{color:'#f87171'}}>{error}</div>}
+      <div style={styles.container}>
+        {/* Header */}
+        <header style={styles.header}>
+          <div style={styles.logo}>NOT A FINANCIAL ADVISOR</div>
+          <button
+            className="btn-dark"
+            onClick={load}
+            style={styles.btn}
+            onMouseEnter={(e)=>{e.currentTarget.style.background='#fff';e.currentTarget.style.color='#000'}}
+            onMouseLeave={(e)=>{e.currentTarget.style.background='#0a0a0a';e.currentTarget.style.color='#fff'}}
+          >
+            Refresh
+          </button>
+        </header>
 
-      {!loading&&!error&&(
-        <div className="grid">
-          <div style={styles.card}>
-            <div style={styles.sectionTitle}>BUY</div>
-            {buySell.buy?(
-              <>
-               <div style={{display:'flex',alignItems:'flex-start',gap:'1rem',width:'100%'}}>
+        {loading && <div style={styles.subtext}>Loading...</div>}
+        {error && <div style={{color:'#f87171'}}>{error}</div>}
 
-                  <img src={buySell.buy.image} alt="coin" style={{width:48,height:48,borderRadius:999,flexShrink:0}}/>
-                  <div style={{minWidth:0}}>
-                    <div style={styles.coinTitle}>{buySell.buy.name} <span style={{color:'#9ca3af'}}>({(buySell.buy.symbol||'').toUpperCase()})</span></div>
-                    <div style={styles.coinPrice}>{fmtUSD(buySell.buy.current_price)}</div>
-                    {pnl.buy && (
-                      <p style={styles.subtext}>
-                        3h PnL {pct(pnl.buy.pnl3h)} | 6h PnL {pct(pnl.buy.pnl6h)} | 1d PnL {pct(pnl.buy.pnl1d)}
-                      </p>
-                    )}
-                    {/* Networks / contracts */}
-{coinDetails.buy && (
-  <div style={{ ...styles.subtext, marginTop: '0.25rem' }}>
-    <div style={{ fontWeight: 600, color: '#e5e7eb', marginBottom: 4 }}>Networks</div>
-    {Object.keys(coinDetails.buy).length === 0 ? (
-      <div>Native token (no contract address)</div>
-    ) : (
-      Object.entries(coinDetails.buy).map(([network, address]) => (
-        <div key={network} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-          <span style={{ minWidth: 160 }}>{network}</span>
-          <span style={{ opacity: 0.85 }}>
-            {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'}
-          </span>
-          {address && (
-<button
-  onClick={() => copy(address)}
-  onMouseEnter={(e) => (e.currentTarget.style.filter = 'brightness(1.25)')}
-  onMouseLeave={(e) => (e.currentTarget.style.filter = 'none')}
-  title="Copy contract"
-  aria-label="Copy contract"
-  style={{
-    background: 'none',
-    border: '1px solid #333',
-    borderRadius: 8,
-    padding: '4px 8px',
-    color: '#fff',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'filter .15s ease'
-  }}
->
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-  </svg>
-</button>
+        {/* ===== Two-column: LEFT (Battle) | RIGHT (Winner) — equal heights ===== */}
+        <div className="two-col" style={styles.twoCol}>
+          {/* LEFT: Battle (wrapper ensures equal height) */}
+          <div style={styles.leftCol}>
+            <div style={styles.card}>
+              <div style={styles.sectionTitle}>Battle of Momentum</div>
 
-
-
-          )}
-        </div>
-      ))
-    )}
-  </div>
-)}
-
+              {/* EARLY */}
+              <div style={styles.subcard}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                  <span style={styles.tag}>EARLY</span>
+                  <div style={styles.scoreWrap}>
+                    <div style={styles.scoreLabel}>Score</div>
+                    <div style={styles.scoreValue}>
+                      {battle.early
+                        ? (
+                          (safe(battle.early?.price_change_percentage_1h_in_currency ?? battle.early?.price_change_percentage_1h ?? 0)*3) +
+                          (safe(battle.early?.price_change_percentage_24h_in_currency ?? battle.early?.price_change_percentage_24h ?? 0)) +
+                          Math.log10(Math.max(1, safe(battle.early?.total_volume)))
+                        ).toFixed(1)
+                        : "—"}
+                    </div>
                   </div>
                 </div>
-                <p style={styles.subtext}>Strong 24h momentum ({pct(buySell.buy.price_change_percentage_24h)}), solid liquidity ({fmtUSD(buySell.buy.total_volume)}). Accessible across networks like {Object.keys(buySell.buy.platforms||{}).join(', ')||'multiple chains'}. Buy on Binance, Coinbase, Kraken, or KuCoin. Momentum driven by social traction and growing trading demand.</p>
-              </>
-            ):<div style={styles.subtext}>No BUY candidate found.</div>}
-          </div>
-
-          <div style={styles.card}>
-            <div style={styles.sectionTitle}>SELL</div>
-            {buySell.sell?(
-              <>
-                <div style={{display:'flex',alignItems:'flex-start',gap:'1rem',width:'100%'}}>
-
-                  <img src={buySell.sell.image} alt="coin" style={{width:48,height:48,borderRadius:999,flexShrink:0}}/>
-                  <div style={{minWidth:0}}>
-                    <div style={styles.coinTitle}>{buySell.sell.name} <span style={{color:'#9ca3af'}}>({(buySell.sell.symbol||'').toUpperCase()})</span></div>
-                    <div style={styles.coinPrice}>{fmtUSD(buySell.sell.current_price)}</div>
-                    {pnl.sell && (
+                {battle.early ? (
+                  <div style={styles.coinRow}>
+                    <img src={battle.early.image} alt="coin" style={{width:48,height:48,borderRadius:999,flexShrink:0}}/>
+                    <div style={{minWidth:0}}>
+                      <div style={styles.coinTitle}>{battle.early.name} <span style={{color:'#9ca3af'}}>({(battle.early.symbol||'').toUpperCase()})</span></div>
+                      <div style={styles.coinPrice}>{fmtUSD(battle.early.current_price)}</div>
                       <p style={styles.subtext}>
-                        3h PnL {pct(pnl.sell.pnl3h)} | 6h PnL {pct(pnl.sell.pnl6h)} | 1d PnL {pct(pnl.sell.pnl1d)}
+                        1h {pct(battle.early.price_change_percentage_1h_in_currency||battle.early.price_change_percentage_1h||0)} ·
+                        24h {pct(battle.early.price_change_percentage_24h_in_currency||battle.early.price_change_percentage_24h||0)} ·
+                        Vol {fmtUSD(battle.early.total_volume)}
                       </p>
-                    )}
-                    {coinDetails.sell && (
-  <div style={{ ...styles.subtext, marginTop: '0.25rem' }}>
-    <div style={{ fontWeight: 600, color: '#e5e7eb', marginBottom: 4 }}>Networks</div>
-    {Object.keys(coinDetails.sell).length === 0 ? (
-      <div>Native token (no contract address)</div>
-    ) : (
-      Object.entries(coinDetails.sell).map(([network, address]) => (
-        <div key={network} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-          <span style={{ minWidth: 160 }}>{network}</span>
-          <span style={{ opacity: 0.85 }}>
-            {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'}
-          </span>
-          {address && (
-     <button
-  onClick={() => copy(address)}
-  onMouseEnter={(e) => (e.currentTarget.style.filter = 'brightness(1.25)')}
-  onMouseLeave={(e) => (e.currentTarget.style.filter = 'none')}
-  title="Copy contract"
-  aria-label="Copy contract"
-  style={{
-    background: 'none',
-    border: '1px solid #333',
-    borderRadius: 8,
-    padding: '4px 8px',
-    color: '#fff',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'filter .15s ease'
-  }}
->
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-  </svg>
-</button>
+                    </div>
+                  </div>
+                ) : <div style={styles.subtext}>No early candidate today.</div>}
+              </div>
 
-
-          )}
-        </div>
-      ))
-    )}
-  </div>
-)}
-
+              {/* EXPLOSIVE */}
+              <div style={styles.subcard}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                  <span style={styles.tag}>EXPLOSIVE</span>
+                  <div style={styles.scoreWrap}>
+                    <div style={styles.scoreLabel}>Score</div>
+                    <div style={styles.scoreValue}>
+                      {battle.explosive
+                        ? (
+                          (safe(battle.explosive?.price_change_percentage_1h_in_currency ?? battle.explosive?.price_change_percentage_1h ?? 0)*3) +
+                          (safe(battle.explosive?.price_change_percentage_24h_in_currency ?? battle.explosive?.price_change_percentage_24h ?? 0)) +
+                          Math.log10(Math.max(1, safe(battle.explosive?.total_volume)))
+                        ).toFixed(1)
+                        : "—"}
+                    </div>
                   </div>
                 </div>
-                <p style={styles.subtext}>Largest 24h decline ({pct(buySell.sell.price_change_percentage_24h)}), high volume ({fmtUSD(buySell.sell.total_volume)}) suggesting profit-taking or bearish shift. Commonly sold on Binance or Bybit. Good candidate to exit or short if leveraged markets available.</p>
-              </>
-            ):<div style={styles.subtext}>No SELL candidate found.</div>}
+                {battle.explosive ? (
+                  <div style={styles.coinRow}>
+                    <img src={battle.explosive.image} alt="coin" style={{width:48,height:48,borderRadius:999,flexShrink:0}}/>
+                    <div style={{minWidth:0}}>
+                      <div style={styles.coinTitle}>{battle.explosive.name} <span style={{color:'#9ca3af'}}>({(battle.explosive.symbol||'').toUpperCase()})</span></div>
+                      <div style={styles.coinPrice}>{fmtUSD(battle.explosive.current_price)}</div>
+                      <p style={styles.subtext}>
+                        1h {pct(battle.explosive.price_change_percentage_1h_in_currency||battle.explosive.price_change_percentage_1h||0)} ·
+                        24h {pct(battle.explosive.price_change_percentage_24h_in_currency||battle.explosive.price_change_percentage_24h||0)} ·
+                        Vol {fmtUSD(battle.explosive.total_volume)}
+                      </p>
+                    </div>
+                  </div>
+                ) : <div style={styles.subtext}>No explosive candidate today.</div>}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: Winner (wrapper ensures equal height) */}
+          <div style={styles.rightCol}>
+            <div style={styles.card}>
+              <div style={styles.sectionTitle}>Winner</div>
+              {battle.winner ? (
+                <>
+                  {/* Header row: left (coin+price) | right (tag+score) */}
+                  <div style={{display:'flex',justifyContent:'space-between',gap:'1rem',alignItems:'flex-start'}}>
+                    <div style={{display:'flex',gap:'1rem'}}>
+                      <img src={battle.winner.image} alt="coin" style={{width:56,height:56,borderRadius:999,flexShrink:0}}/>
+                      <div>
+                        <div style={styles.coinTitle}>
+                          {battle.winner.name} <span style={{color:'#9ca3af'}}>({(battle.winner.symbol||'').toUpperCase()})</span>
+                        </div>
+                        <div style={styles.coinPrice}>{fmtUSD(battle.winner.current_price)}</div>
+                      </div>
+                    </div>
+
+                    <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+                      <span style={{...styles.tag, borderColor:'#1f1f1f', color:'#cbd5e1'}}>{battle.winner._tag}</span>
+                      <div style={styles.scoreWrap}>
+                        <div style={styles.scoreLabel}>Score</div>
+                        <div style={styles.scoreValue}>{battle.winner._score?.toFixed(1)}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Reason */}
+                  <div style={styles.verdict}>
+                    {battle.reason}
+                  </div>
+
+                  {/* PnL */}
+                  {pnl.winner && (
+                    <p style={styles.subtext}>
+                      3h PnL {pct(pnl.winner.pnl3h)} | 6h PnL {pct(pnl.winner.pnl6h)} | 1d PnL {pct(pnl.winner.pnl1d)}
+                    </p>
+                  )}
+
+                  {/* Networks / contracts */}
+                  {coinDetails.winner && (
+                    <div style={{ ...styles.subtext, marginTop: '0.25rem' }}>
+                      <div style={{ fontWeight: 600, color: '#e5e7eb', marginBottom: 4 }}>Networks</div>
+                      {Object.keys(coinDetails.winner).length === 0 ? (
+                        <div>Native token (no contract address)</div>
+                      ) : (
+                        Object.entries(coinDetails.winner).map(([network, address]) => (
+                          <div key={network} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                            <span style={{ minWidth: 160 }}>{network}</span>
+                            <span style={{ opacity: 0.85 }}>
+                              {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'}
+                            </span>
+                            {address && (
+                              <button
+                                onClick={() => copy(address)}
+                                onMouseEnter={(e) => (e.currentTarget.style.filter = 'brightness(1.25)')}
+                                onMouseLeave={(e) => (e.currentTarget.style.filter = 'none')}
+                                title="Copy contract"
+                                aria-label="Copy contract"
+                                style={styles.copyBtnBase}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={styles.subtext}>No winner — insufficient momentum today.</div>
+              )}
+            </div>
           </div>
         </div>
-      )}
 
-      <div style={{...styles.card,width:'100%'}}>
-        <div style={styles.sectionTitle}>Support</div>
-        <div style={styles.subtext}>If I helped you make money, show some love ❤️</div>
-        <div style={styles.donation}>
-          <input readOnly value={'0x6575048c1b1f8dB65D7B0a10430146aA59D84D58'} style={{flex:1,padding:'0.8rem',borderRadius:12,border:'1px solid #333',background:'#000',color:'#fff'}}/>
-         <button
-  onClick={()=>copy('0x6575048c1b1f8dB65D7B0a10430146aA59D84D58')}
-  title="Copy wallet address"
-  aria-label="Copy wallet address"
-  style={{ ...styles.loveBtn, display:'flex', alignItems:'center', justifyContent:'center', transition:'filter .15s ease' }}
-  onMouseEnter={(e)=>e.currentTarget.style.filter='brightness(1.25)'}
-  onMouseLeave={(e)=>e.currentTarget.style.filter='none'}
->
-  {copied ? '✅' : (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
-  )}
-</button>
-
+        {/* SELL (below the two-column section) */}
+        <div style={styles.card}>
+          <div style={styles.sectionTitle}>Sell</div>
+          {sellPick?(
+            <>
+              <div style={styles.coinRow}>
+                <img src={sellPick.image} alt="coin" style={{width:48,height:48,borderRadius:999,flexShrink:0}}/>
+                <div style={{minWidth:0}}>
+                  <div style={styles.coinTitle}>{sellPick.name} <span style={{color:'#9ca3af'}}>({(sellPick.symbol||'').toUpperCase()})</span></div>
+                  <div style={styles.coinPrice}>{fmtUSD(sellPick.current_price)}</div>
+                  {pnl.sell && (
+                    <p style={styles.subtext}>
+                      3h PnL {pct(pnl.sell.pnl3h)} | 6h PnL {pct(pnl.sell.pnl6h)} | 1d PnL {pct(pnl.sell.pnl1d)}
+                    </p>
+                  )}
+                  {coinDetails.sell && (
+                    <div style={{ ...styles.subtext, marginTop: '0.25rem' }}>
+                      <div style={{ fontWeight: 600, color: '#e5e7eb', marginBottom: 4 }}>Networks</div>
+                      {Object.keys(coinDetails.sell).length === 0 ? (
+                        <div>Native token (no contract address)</div>
+                      ) : (
+                        Object.entries(coinDetails.sell).map(([network, address]) => (
+                          <div key={network} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                            <span style={{ minWidth: 160 }}>{network}</span>
+                            <span style={{ opacity: 0.85 }}>
+                              {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'}
+                            </span>
+                            {address && (
+                              <button
+                                onClick={() => copy(address)}
+                                onMouseEnter={(e) => (e.currentTarget.style.filter = 'brightness(1.25)')}
+                                onMouseLeave={(e) => (e.currentTarget.style.filter = 'none')}
+                                title="Copy contract"
+                                aria-label="Copy contract"
+                                style={styles.copyBtnBase}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <p style={styles.subtext}>
+                Largest 24h decline suggests weakness or profit-taking; consider exiting exposure or hedging.
+              </p>
+            </>
+          ):<div style={styles.subtext}>No SELL candidate found.</div>}
         </div>
+
+        {/* How the battle works (moved to bottom) */}
+        <div style={styles.card}>
+          <div style={styles.sectionTitle}>How the battle works</div>
+          <div style={styles.explainerBox}>
+            We compare two contenders on momentum and liquidity to aim for pragmatic entries:
+            <br/><br/>
+            <strong>Early</strong> — coins up <em>3–10%</em> in 24h with a positive <em>1h impulse</em> (healthier entries).
+            <br/>
+            <strong>Explosive</strong> — coins up <em>10–60%</em> in 24h with strong <em>liquidity</em> (bigger upside, bigger risk).
+            <br/><br/>
+            <span style={{opacity:.9}}>Score formula:</span> <code>(1h momentum × 3) + 24h change + log₁₀(volume)</code>. Highest score wins.
+          </div>
+        </div>
+
+        {/* Donation */}
+        <div style={{...styles.card,width:'100%'}}>
+          <div style={styles.sectionTitle}>❤️ Support</div>
+          <div style={styles.subtext}>If I helped you make money, show some love ❤️</div>
+          <div style={styles.donation}>
+            <input readOnly value={'0x6575048c1b1f8dB65D7B0a10430146aA59D84D58'} style={{flex:1,padding:'0.8rem',borderRadius:12,border:'1px solid #1b1b1b',background:'#000',color:'#fff'}}/>
+            <button
+              onClick={()=>copy('0x6575048c1b1f8dB65D7B0a10430146aA59D84D58')}
+              title="Copy wallet address"
+              aria-label="Copy wallet address"
+              style={{ ...styles.copyBtnBase, border:'1px solid #333' }}
+              onMouseEnter={(e)=>e.currentTarget.style.filter='brightness(1.25)'}
+              onMouseLeave={(e)=>e.currentTarget.style.filter='none'}
+            >
+              {copied ? '✅' : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
+
+        <footer style={{fontSize:12,color:'#6b7280',marginTop:'1.5rem',textAlign:'center'}}>
+          Data: CoinGecko API — Informational only, not financial advice.
+        </footer>
       </div>
-
-      <footer style={{fontSize:12,color:'#6b7280',marginTop:'1.5rem',textAlign:'center'}}>Data: CoinGecko API — Informational only, not financial advice.</footer>
     </div>
-  </div>);
+  );
 }
